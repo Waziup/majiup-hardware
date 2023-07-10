@@ -9,8 +9,9 @@
   Project details: https://RandomNerdTutorials.com/arduino-tds-water-quality-sensor/
 
 */
+
 #include <WaziDev.h>
-#include <xlpp.h>
+#include <xlpp.h>   
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
@@ -121,7 +122,6 @@ void setup() {
   // Set up serial monitor
   Serial.begin(38400);
 
-
   /*---------*/
 
   uint8_t errSetup = wazidev.setupLoRaWAN(devAddr, appSkey, nwkSkey);
@@ -158,12 +158,11 @@ void loop() {
   Serial.print(level);
   Serial.println(" mm");
 
+  //Request for temperature fromt the temperature probe
   sensors.requestTemperatures();
 
   // Read temperature in Celsius
   float temperatureC = sensors.getTempCByIndex(0);
-
-  // Read temperature in Fahrenheit
 
   // Print temperatures
   Serial.print("Temperature: ");
@@ -207,9 +206,17 @@ void loop() {
     }
   }
 
-  xlpp.addAnalogInput(0, level);
-  xlpp.addTemperature(1, temperatureC);
-  xlpp.addAnalogInput(2, tdsValue);
+  //check for zero values before sending the values. Each values is send independently
+  if (level > 0){
+    xlpp.addTemperature(0, level);
+  }
+  if (temperatureC > 0){
+    xlpp.addTemperature(1, temperatureC);
+  }
+  if (tdsValue > 0){
+    xlpp.addTemperature(2, tdsValue);
+  }
+  
   Serial.println();
   // Send payload with LoRaWAN.
   serialPrintf("LoRaWAN sending ... ");
