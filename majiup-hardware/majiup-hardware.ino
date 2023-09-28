@@ -11,9 +11,13 @@
 */
 
 #include <WaziDev.h>
-#include <xlpp.h>   
+#include <xlpp.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <EEPROM.h>
+
+// Defining EEPROM Memory
+#define EEPROM_ADDRESS 0
 
 // Defining sonar sensor
 #define TRIGPIN 4
@@ -30,11 +34,15 @@
 
 /*---------*/
 
+//Defining timing params
+unsigned long previousSendTime = 0;
+unsigned long sendInterval = 300000;
+
 // NwkSKey (Network Session Key) and Appkey (AppKey) are used for securing LoRaWAN transmissions.
 // You need to copy them from/to your LoRaWAN server or gateway.
 // You need to configure also the devAddr. DevAddr need to be different for each devices!!
-// Copy'n'paste the DevAddr (Device Address): 26011D00
-unsigned char devAddr[4] = {0x26, 0x01, 0x1D, 0x00};
+// Copy'n'paste the DevAddr (Device Address): 26018EAF
+unsigned char devAddr[4] = {0x26, 0x01, 0x8E, 0xAF};
 
 // Copy'n'paste the key to your Wazigate: 23158D3BBC31E6AF670D195B5AED5525
 unsigned char appSkey[16] = {0x23, 0x15, 0x8D, 0x3B, 0xBC, 0x31, 0xE6, 0xAF, 0x67, 0x0D, 0x19, 0x5B, 0x5A, 0xED, 0x55, 0x25};
@@ -57,6 +65,16 @@ int analogBuffer[SCOUNT];     // store the analog value in the array, read from 
 int analogBufferTemp[SCOUNT];
 int analogBufferIndex = 0;
 int copyIndex = 0;
+
+// Filtering declarations...
+//
+const int threshold = 15; // Adjust this threshold as needed
+const int stabilityThreshold = 30; // Adjust as needed
+bool calibrating = true;
+float previousValue = 0;
+int stabilityCount = 0;
+float lastStableValue = 0;
+//
 
 float averageVoltage = 0;
 float tdsValue = 0;
@@ -153,10 +171,49 @@ void loop() {
 
   // Print result to serial monitor
   xlpp.reset();
+
   float level = getWaterLevel();
-  Serial.print("Water Level: ");
-  Serial.print(level);
-  Serial.println(" mm");
+
+  if (stabilityCount <= stabilityThreshold) {
+    calibrating = true;
+  }
+  if (stabilityCount > stabilityThreshold) {
+    calibrating = false;
+  }
+
+  // Measured value within threshold and calibrating (less than X values measured)
+  if (abs(level - previousValue) <= threshold && calibrating) {
+    Serial.println("Calibrating...");
+    lastStableValue = previousValue;
+    stabilityCount++;
+    Serial.print("SV: ");
+    Serial.println(lastStableValue);
+    Serial.print("COUNT: ");
+    Serial.println(stabilityCount);
+  }
+
+  if (abs(level - previousValue) > threshold && calibrating) {
+    Serial.println("In Calib Mode but sensor val out of threshold");
+    stabilityCount = 0;
+  }
+
+  // Measured value within threshold and not calibrating
+  if (abs(level - lastStableValue) <= threshold && !calibrating) {
+
+    lastStableValue = level;
+    if (level > 0) {
+      xlpp.addTemperature(0, level);
+    }
+  } else {
+    if (!calibrating) {
+      level = lastStableValue;
+      if (level > 0) {
+        xlpp.addTemperature(0, level);
+      }
+    }
+  }
+
+  previousValue = level;
 
   //Request for temperature fromt the temperature probe
   sensors.requestTemperatures();
@@ -164,13 +221,8 @@ void loop() {
   // Read temperature in Celsius
   float temperatureC = sensors.getTempCByIndex(0);
 
-  // Print temperatures
-  Serial.print("Temperature: ");
-  Serial.print(temperatureC);
-  Serial.print(" °C");
-  Serial.println();
-
   static unsigned long analogSampleTimepoint = millis();
+
   if (millis() - analogSampleTimepoint > 40U) { //every 40 milliseconds,read the analog value from the ADC
     analogSampleTimepoint = millis();
     analogBuffer[analogBufferIndex] = analogRead(TdsSensorPin);    //read the analog value and store into the buffer
@@ -207,18 +259,30 @@ void loop() {
   }
 
   //check for zero values before sending the values. Each values is send independently
-  if (level > 0){
-    xlpp.addTemperature(0, level);
-  }
-  if (temperatureC > 0){
+  if (temperatureC > 0) {
     xlpp.addTemperature(1, temperatureC);
   }
-  if (tdsValue > 0){
+  if (tdsValue > 0) {
     xlpp.addTemperature(2, tdsValue);
   }
-  
-  Serial.println();
+
   // Send payload with LoRaWAN.
+
+  receiveLoRaData();
+
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousSendTime >= sendInterval) {
+    sendDataToGateway();
+    previousSendTime = currentMillis;
+  }
+
+  // Delay before repeating measurement
+  Serial.println("------------------------------------------------------------");
+  delay(3000);
+}
+
+
+void sendDataToGateway() {
   serialPrintf("LoRaWAN sending ... ");
   uint8_t e = wazidev.sendLoRaWAN(xlpp.buf, xlpp.len);
   if (e != 0)
@@ -229,7 +293,8 @@ void loop() {
   }
   serialPrintf("OK\n");
 
-  // Delay before repeating measurement
-  Serial.println("------------------------------------------------------------");
-  delay(1000);
+}
+
+void receiveLoRaData() {
+
 }
