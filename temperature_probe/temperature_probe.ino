@@ -1,7 +1,7 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
-#define ONE_WIRE_BUS A2 // Pin connected to the DS18B20 data line
+#define ONE_WIRE_BUS A4 // Pin connected to the DS18B20 data line
 
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
