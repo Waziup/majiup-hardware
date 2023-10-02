@@ -12,32 +12,36 @@
 
 #include <WaziDev.h>
 #include <xlpp.h>
+#include <Base64.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <EEPROM.h>
 
-// Defining EEPROM Memory
-#define EEPROM_ADDRESS 0
-
 // Defining sonar sensor
-#define TRIGPIN 4
-#define ECHOPIN 3
+#define TRIGPIN 4    //4
+#define ECHOPIN 3   //3
 #define TotalReads 5
+#define powerSonarPin 6
 
 // Defining TDS sensor
-#define TdsSensorPin A1
+#define TdsSensorPin A1  //A1
 #define VREF 5.0              // analog reference voltage(Volt) of the ADC
-#define SCOUNT  1            // sum of sample point
+#define SCOUNT  1             // sum of sample point
+#define powerTDSPin 7
 
 // Defining temperature probe sensor
-#define ONE_WIRE_BUS A2 // Pin connected to the DS18B20 data line
+#define ONE_WIRE_BUS A4  //A4   // Pin connected to the DS18B20 data line
+#define powerTempPin 5
+
+// Defining pump
+#define pumpPin A2
+int pumpStatusAddress = 0;
 
 /*---------*/
 
 //Defining timing params
 unsigned long previousSendTime = 0;
 unsigned long sendInterval = 300000;
-
 // NwkSKey (Network Session Key) and Appkey (AppKey) are used for securing LoRaWAN transmissions.
 // You need to copy them from/to your LoRaWAN server or gateway.
 // You need to configure also the devAddr. DevAddr need to be different for each devices!!
@@ -105,6 +109,7 @@ int getMedianNum(int bArray[], int iFilterLen) {
 }
 
 float getWaterLevel() {
+  digitalWrite(powerSonarPin, HIGH);
   unsigned int sum = 0;
   // Floats to calculate distance
   float duration, distance;
@@ -133,7 +138,83 @@ float getWaterLevel() {
     sum += distance;
     delay(100);
   }
+  digitalWrite(powerSonarPin, LOW);
   return sum / TotalReads;
+
+}
+
+
+
+void sendDataToGateway() {
+  serialPrintf("LoRaWAN sending ... ");
+  uint8_t e = wazidev.sendLoRaWAN(xlpp.buf, xlpp.len);
+  if (e != 0)
+  {
+    serialPrintf("Err %d\n", e);
+    delay(50);
+    return;
+  }
+  serialPrintf("OK\n");
+}
+
+void receiveLoRaData() {
+  serialPrintf("LoRa receive ... ");
+  xlpp.reset();
+  uint8_t e = wazidev.sendLoRaWAN(xlpp.buf, xlpp.len);
+  uint8_t offs = 0;
+  long startSend = millis();
+  uint8_t offset;
+  uint8_t len;
+  uint8_t buf[255];
+
+  //e = wazidev.receiveLoRaWAN(xlpp.buf, &offset, &xlpp.len, 6000);
+  e = wazidev.receiveLoRaWAN(xlpp.buf, &xlpp.offset, &xlpp.len, 10000);
+
+  long endSend = millis();
+  if (e != 0)
+  {
+    if (e == ERR_LORA_TIMEOUT) {
+      serialPrintf("nothing received\n");
+    }
+    else
+    {
+      serialPrintf("Err %d\n", e);
+    }
+    delay(500);
+    return;
+  }
+  serialPrintf("OK\n");
+  serialPrintf("Payload: ");
+  char payload[100];
+  base64_decode(payload, xlpp.getBuffer(), xlpp.len);
+  serialPrintf(payload);
+  if (payload) {
+    if (strcmp(payload, "true") == 0) {
+      Serial.println("Turn pump ON");
+      digitalWrite(pumpPin, HIGH);
+      writePumpStatus(1);
+    } else if (strcmp(payload, "false") == 0) {
+      Serial.println("Turn pump OFF");
+      digitalWrite(pumpPin, LOW);
+      writePumpStatus(0);
+    } else {
+      Serial.println("Unknown payload: " + String(payload));
+    }
+  }
+  serialPrintf("\n");
+}
+
+
+// Function to read the pump status from EEPROM
+bool readPumpStatus() {
+  byte value = EEPROM.read(pumpStatusAddress);
+  return (value == 1); // 1 represents ON, 0 represents OFF
+}
+
+// Function to write the pump status to EEPROM
+void writePumpStatus(bool status) {
+  byte value = status ? 1 : 0;
+  EEPROM.write(pumpStatusAddress, value);
 }
 
 void setup() {
@@ -163,16 +244,24 @@ void setup() {
   pinMode(TdsSensorPin, INPUT);
   sensors.begin();
 
-  pinMode(5, OUTPUT);
-  digitalWrite(5, HIGH);
+  pinMode(powerTDSPin, OUTPUT);
+  pinMode(powerTempPin, OUTPUT);
+  pinMode(powerSonarPin, OUTPUT);
+
+  digitalWrite(powerTDSPin, HIGH);
+
+  // Setup pump
+  pinMode(pumpPin, OUTPUT);
+  bool pumpStatus = readPumpStatus();
+  digitalWrite(pumpPin, pumpStatus ? HIGH : LOW);
 }
 
 void loop() {
 
-  // Print result to serial monitor
   xlpp.reset();
 
   float level = getWaterLevel();
+  Serial.println(level);
 
   if (stabilityCount <= stabilityThreshold) {
     calibrating = true;
@@ -186,10 +275,10 @@ void loop() {
     Serial.println("Calibrating...");
     lastStableValue = previousValue;
     stabilityCount++;
-    Serial.print("SV: ");
-    Serial.println(lastStableValue);
-    Serial.print("COUNT: ");
-    Serial.println(stabilityCount);
+    //    Serial.print("SV: ");
+    //    Serial.println(lastStableValue);
+    //    Serial.print("COUNT: ");
+    //    Serial.println(stabilityCount);
   }
 
   if (abs(level - previousValue) > threshold && calibrating) {
@@ -215,12 +304,17 @@ void loop() {
 
   previousValue = level;
 
+  digitalWrite(powerTempPin, HIGH);
   //Request for temperature fromt the temperature probe
   sensors.requestTemperatures();
 
   // Read temperature in Celsius
   float temperatureC = sensors.getTempCByIndex(0);
+  digitalWrite(powerTempPin, HIGH);
 
+
+  Serial.println(temperatureC);
+  
   static unsigned long analogSampleTimepoint = millis();
 
   if (millis() - analogSampleTimepoint > 40U) { //every 40 milliseconds,read the analog value from the ADC
@@ -268,33 +362,15 @@ void loop() {
 
   // Send payload with LoRaWAN.
 
-  receiveLoRaData();
-
   unsigned long currentMillis = millis();
   if (currentMillis - previousSendTime >= sendInterval) {
     sendDataToGateway();
     previousSendTime = currentMillis;
   }
 
+  receiveLoRaData();
+
   // Delay before repeating measurement
   Serial.println("------------------------------------------------------------");
-  delay(3000);
-}
-
-
-void sendDataToGateway() {
-  serialPrintf("LoRaWAN sending ... ");
-  uint8_t e = wazidev.sendLoRaWAN(xlpp.buf, xlpp.len);
-  if (e != 0)
-  {
-    serialPrintf("Err %d\n", e);
-    delay(50);
-    return;
-  }
-  serialPrintf("OK\n");
-
-}
-
-void receiveLoRaData() {
-
+  delay(1000);
 }
