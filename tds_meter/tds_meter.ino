@@ -4,6 +4,7 @@
 #define TdsSensorPin A1
 #define VREF 5.0              // analog reference voltage(Volt) of the ADC
 #define SCOUNT  30            // sum of sample point
+#define powerTDSPin 7
 
 int analogBuffer[SCOUNT];     // store the analog value in the array, read from ADC
 int analogBufferTemp[SCOUNT];
@@ -41,8 +42,8 @@ int getMedianNum(int bArray[], int iFilterLen){
 void setup(){
   Serial.begin(38400);
   pinMode(TdsSensorPin,INPUT);
-  pinMode(4, OUTPUT);
-  digitalWrite(4,HIGH);
+  pinMode(powerTDSPin, OUTPUT);
+  digitalWrite(powerTDSPin, HIGH);
 }
 
 void loop(){
