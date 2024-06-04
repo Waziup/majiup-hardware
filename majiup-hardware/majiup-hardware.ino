@@ -27,7 +27,7 @@
 
 //Defining timing params
 unsigned long previousSendTime = 0;
-unsigned long sendInterval = 100000; // Time in milliseconds 1s = 1000ms
+unsigned long sendInterval = 15000; // Time in milliseconds 1s = 1000ms
 // NwkSKey (Network Session Key) and Appkey (AppKey) are used for securing LoRaWAN transmissions.
 // You need to copy them from/to your LoRaWAN server or gateway.
 // You need to configure also the devAddr. DevAddr need to be different for each devices!!
@@ -225,7 +225,7 @@ void loop() {
   
   static unsigned long analogSampleTimepoint = millis();
 
- // Send data to gateway at given time intervals (sendInterval)
+//  Send data to gateway at given time intervals (sendInterval)
  unsigned long currentMillis = millis();
  if ((currentMillis - previousSendTime >= sendInterval) && !calibrating) {
     sendDataToGateway();
