@@ -16,6 +16,7 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <EEPROM.h>
+#include <LowPower.h>
 
 // Defining sonar sensor
 #define TRIGPIN A2    //4
@@ -25,9 +26,26 @@
 
 /*---------*/
 
+
+#include <Vcc.h>
+
+//MORE DECIMAL PLACES LEAD TO MUCH ACCURATE BATTERY READING(thus for VccMax and VccCorrection)
+const float VccMin   = 0.0;           // Minimum expected Vcc level, in Volts.
+const float VccMax   = 3.319;         // Maximum expected Vcc level, in Volts(Use a multimeter to measure the maximum output voltage of your regulator. Thus when you connect a fully charged battery to it).
+const float VccCorrection = 0.9825;  // Tweak this value until the output of "v" on line 38 is the same as what you measured with your multimeter above for VccMax
+
+const float lowBat = 2.9; //Indicate the value your battery manufacturer states as absolutely dead battery
+const float fullBat = 4.8; //Indicate the value your fully charged battery will be at
+float percentage = 0.0;
+Vcc vcc(VccCorrection);
+
+//BATTERY IS CONNECTED TO A0
+int batt_pin = A0;
+
+
 //Defining timing params
 unsigned long previousSendTime = 0;
-unsigned long sendInterval = 15000; // Time in milliseconds 1s = 1000ms
+unsigned long sendInterval = 300000; // Time in milliseconds 1s = 1000ms
 // NwkSKey (Network Session Key) and Appkey (AppKey) are used for securing LoRaWAN transmissions.
 // You need to copy them from/to your LoRaWAN server or gateway.
 // You need to configure also the devAddr. DevAddr need to be different for each devices!!
@@ -48,8 +66,8 @@ WaziDev wazidev;
 XLPP xlpp(120);
 
 // Filtering declarations...
-const int threshold = 15; // Thresholding value
-const int stabilityThreshold = 10; // Number of consecutive measurements within threshold
+const int threshold = 45; // Thresholding value
+const int stabilityThreshold = 20; // Number of consecutive measurements within threshold
 bool calibrating = true;
 float previousValue = 0;
 int stabilityCount = 0;
@@ -89,8 +107,6 @@ float getWaterLevel() {
   return sum / TotalReads;
 
 }
-
-
 
 void sendDataToGateway() {
   serialPrintf("LoRaWAN sending ... ");
@@ -170,6 +186,44 @@ void setup() {
   pinMode(powerSonarPin, OUTPUT);
 }
 
+float getBattVoltage() {  
+  int j;
+  float v = 0;
+  for (j = 0; j < 100; j++) {
+    v += vcc.Read_Volts();
+    delay(5);
+  }
+
+  //FIND AVERAGE OF 100 VCC VOLTAGE SAMPLES
+  v = v / j;
+
+  //PRINTING AVERAGE OF 100 VCC VOLTAGE SAMPLES TO 3 DECIMAL PLACES
+  Serial.println();
+  Serial.print("VCC: ");
+  Serial.println(v, 3);
+
+  
+  //COLLECT 100 BATTERY VOLTAGE SAMPLES
+  int i;
+  float batt_volt = 0;
+  for (i = 0; i < 100; i++) {
+    //USING THE CURRENT VCC VOLTAGE AS REFERENCE TO CALCULATE BATTERY VOLTAGE
+    batt_volt += ((analogRead(batt_pin) * (v / 1023.0)) * 2);
+    delay(5);
+  }
+
+  //FIND AVERAGE OF 100 BATTERY VOLTAGE SAMPLES
+  batt_volt = batt_volt / i;
+
+  //CONVERTING BATTERY VOLTAGE TO PERCENTAGE ASSUMING 4.19V AS THE FULL CHARGE VALUE
+  float percentage = ((batt_volt - lowBat )/ (fullBat - lowBat)) * 100;
+  return percentage;
+}
+
+bool getCharging() {
+  return true;
+}
+
 void loop() {
 
   xlpp.reset();  //reset the payload in every loop
@@ -225,16 +279,35 @@ void loop() {
   
   static unsigned long analogSampleTimepoint = millis();
 
+  
+  float percentage = getBattVoltage();
+  xlpp.addTemperature(1, percentage);
+
 //  Send data to gateway at given time intervals (sendInterval)
  unsigned long currentMillis = millis();
- if ((currentMillis - previousSendTime >= sendInterval) && !calibrating) {
-    sendDataToGateway();
-    previousSendTime = currentMillis;
-  }
+// if ((cu/rrentMillis - previousSendTime >= sendInterval) && !calibrating) {
+    if (!calibrating){
+      sendDataToGateway();
+    }
+//    previ/ousSendTime = currentMillis;
+//  }
 
 //  receiveLoRaData();
 
   // Delay before repeating measurement
   Serial.println("------------------------------------------------------------");
-  delay(1000);
+  
+  Serial.print(percentage);
+  Serial.println();
+    
+  // Put the microcontroller to sleep to save battery
+  delay(3000);
+  
+  float  delayTime = (percentage > 50.00) ? 37 : 37;
+  if (!calibrating){
+    for (int i = 0; i < delayTime; i++) {
+      LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
+    }
+  }
+  
 }
