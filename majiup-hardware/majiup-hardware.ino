@@ -303,7 +303,7 @@ void loop() {
   // Put the microcontroller to sleep to save battery
   delay(3000);
   
-  float  delayTime = (percentage > 50.00) ? 37 : 37;
+  float  delayTime = (percentage > 50.00) ? 7 : 7;
   if (!calibrating){
     for (int i = 0; i < delayTime; i++) {
       LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
