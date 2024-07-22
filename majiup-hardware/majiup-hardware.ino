@@ -19,8 +19,8 @@
 #include <LowPower.h>
 
 // Defining sonar sensor
-#define TRIGPIN A2    //4
-#define ECHOPIN A1   //3
+#define TRIGPIN A1    //4
+#define ECHOPIN A2   //3
 #define TotalReads 5
 #define powerSonarPin 6
 
