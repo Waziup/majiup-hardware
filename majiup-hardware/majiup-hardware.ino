@@ -19,9 +19,9 @@
 #include <LowPower.h>
 
 // Defining sonar sensor
-#define TRIGPIN A1    //4
-#define ECHOPIN A2   //3
-#define TotalReads 5
+#define TRIGPIN A2    //4
+#define ECHOPIN A1   //3
+#define TotalReads 3
 #define powerSonarPin 6
 
 /*---------*/
@@ -49,8 +49,8 @@ unsigned long sendInterval = 300000; // Time in milliseconds 1s = 1000ms
 // NwkSKey (Network Session Key) and Appkey (AppKey) are used for securing LoRaWAN transmissions.
 // You need to copy them from/to your LoRaWAN server or gateway.
 // You need to configure also the devAddr. DevAddr need to be different for each devices!!
-// Copy'n'paste the DevAddr (Device Address): 26018EEE
-unsigned char devAddr[4] = {0x26, 0x01, 0x8E, 0xEE};
+// Copy'n'paste the DevAddr (Device Address): 20018EEF
+unsigned char devAddr[4] = {0x20, 0x01, 0x8E, 0xEF};
 
 // Copy'n'paste the key to your Wazigate: 23158D3BBC31E6AF670D195B5AED5501
 unsigned char appSkey[16] = {0x23, 0x15, 0x8D, 0x3B, 0xBC, 0x31, 0xE6, 0xAF, 0x67, 0x0D, 0x19, 0x5B, 0x5A, 0xED, 0x55, 0x01};
@@ -66,8 +66,8 @@ WaziDev wazidev;
 XLPP xlpp(120);
 
 // Filtering declarations...
-const int threshold = 45; // Thresholding value
-const int stabilityThreshold = 20; // Number of consecutive measurements within threshold
+const int threshold = 150; // Thresholding value
+const int stabilityThreshold = 5; // Number of consecutive measurements within threshold
 bool calibrating = true;
 float previousValue = 0;
 int stabilityCount = 0;
@@ -296,10 +296,7 @@ void loop() {
 
   // Delay before repeating measurement
   Serial.println("------------------------------------------------------------");
-  
-  Serial.print(percentage);
-  Serial.println();
-    
+      
   // Put the microcontroller to sleep to save battery
   delay(3000);
   
