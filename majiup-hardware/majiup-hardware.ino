@@ -22,7 +22,7 @@
 #define TRIGPIN A2    //4
 #define ECHOPIN A1   //3
 #define TotalReads 3
-#define powerSonarPin 6
+#define powerSonarPin 4
 
 /*---------*/
 
