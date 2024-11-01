@@ -93,7 +93,7 @@ float getWaterLevel() {
     sum += distance;
     delay(100);
   }
-  digitalWrite(powerSonarPin, LOW);
+//  digitalWrite(powerSonarPin, LOW);
   return sum / TotalReads;
 
 }
@@ -102,22 +102,7 @@ float getWaterLevel() {
 
 void setup() {
 
-
   Serial.begin(38400);
-
-  /*---------*/
-
-  uint8_t errSetup = wazidev.setupLoRaWAN(devAddr, appSkey, nwkSkey);
-  if (errSetup != 0)
-  {
-    serialPrintf("LoRaWAN Err %d\n", errSetup);
-    delay(50);
-    return;
-  }
-
-  else {
-    serialPrintf("LoRaWAN setup successful\n");
-  }
 
   /*--------*/
   // Set up serial monitor
@@ -126,13 +111,11 @@ void setup() {
   // Set pinmodes for sensor connections
   pinMode(ECHOPIN, INPUT);
   pinMode(TRIGPIN, OUTPUT);
-//  pinMode(6, OUTPUT);
-//  digitalWrite(6, HIGH);
+  pinMode(6, OUTPUT);
+  digitalWrite(6, HIGH);
 }
  
 void loop() {
-
-  xlpp.reset();
 
   float level = getWaterLevel();
   Serial.print("Water Level: ");
@@ -140,51 +123,6 @@ void loop() {
   Serial.print(" mm");
   Serial.println();
  
-
-  if (stabilityCount <= stabilityThreshold) {
-    calibrating = true;
-  }
-  if (stabilityCount > stabilityThreshold) {
-    calibrating = false;
-  }
-
-  // Measured value within threshold and calibrating (less than X values measured)
-  if (abs(level - previousValue) <= threshold && calibrating) {
-    Serial.println("Calibrating...");
-    lastStableValue = previousValue;
-    stabilityCount++;
-    //    Serial.print("SV: ");
-    //    Serial.println(lastStableValue);
-    //    Serial.print("COUNT: ");
-    //    Serial.println(stabilityCount);
-  }
-
-  if (abs(level - previousValue) > threshold && calibrating) {
-    Serial.println("In Calibration mode Mode but sensor value out of threshold");
-    stabilityCount = 0;
-  }
-
-  // Measured value within threshold and not calibrating
-  if (abs(level - lastStableValue) <= threshold && !calibrating) {
-
-    lastStableValue = level;
-    if (level > 0) {
-      xlpp.addTemperature(0, level);
-    }
-  } else {
-    if (!calibrating) {
-      level = lastStableValue;
-      if (level > 0) {
-        xlpp.addTemperature(0, level);
-      }
-    }
-  }
-
-  previousValue = level;
-
-  sendDataToGateway();
-
- 
-  // Delay before repeating measurement
+ // Delay before repeating measurement
   delay(100);
 }
