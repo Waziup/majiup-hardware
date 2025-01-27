@@ -22,7 +22,7 @@
 #define TRIGPIN A2    //4
 #define ECHOPIN A1   //3
 #define TotalReads 3
-#define powerSonarPin 4
+#define powerSonarPin 6
 
 /*---------*/
 
@@ -66,7 +66,9 @@ WaziDev wazidev;
 XLPP xlpp(120);
 
 // Filtering declarations...
-const int threshold = 150; // Thresholding value
+//const int threshold = 150; // Thresholding value
+const int threshold = 80; // Thresholding value
+
 const int stabilityThreshold = 5; // Number of consecutive measurements within threshold
 bool calibrating = true;
 float previousValue = 0;
