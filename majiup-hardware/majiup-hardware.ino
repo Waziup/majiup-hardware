@@ -21,7 +21,7 @@
 // Defining sonar sensor
 #define TRIGPIN A2    //4
 #define ECHOPIN A1   //3
-#define TotalReads 3
+#define TotalReads 1
 #define powerSonarPin 6
 
 /*---------*/
@@ -36,6 +36,10 @@ const float VccCorrection = 0.9825;  // Tweak this value until the output of "v"
 
 const float lowBat = 2.9; //Indicate the value your battery manufacturer states as absolutely dead battery
 const float fullBat = 4.8; //Indicate the value your fully charged battery will be at
+
+static unsigned long lastSendTime = 0;  // Tracks the last time xlpp.addTemperature was executed
+unsigned long currentMillis = millis(); // Get the current time
+
 float percentage = 0.0;
 Vcc vcc(VccCorrection);
 
@@ -49,8 +53,8 @@ unsigned long sendInterval = 300000; // Time in milliseconds 1s = 1000ms
 // NwkSKey (Network Session Key) and Appkey (AppKey) are used for securing LoRaWAN transmissions.
 // You need to copy them from/to your LoRaWAN server or gateway.
 // You need to configure also the devAddr. DevAddr need to be different for each devices!!
-// Copy'n'paste the DevAddr (Device Address): 20018EEF
-unsigned char devAddr[4] = {0x20, 0x01, 0x8E, 0xEF};
+// Copy'n'paste the DevAddr (Device Address): 28018EEF
+unsigned char devAddr[4] = {0x28, 0x01, 0x8E, 0xEF};
 
 // Copy'n'paste the key to your Wazigate: 23158D3BBC31E6AF670D195B5AED5501
 unsigned char appSkey[16] = {0x23, 0x15, 0x8D, 0x3B, 0xBC, 0x31, 0xE6, 0xAF, 0x67, 0x0D, 0x19, 0x5B, 0x5A, 0xED, 0x55, 0x01};
@@ -67,7 +71,7 @@ XLPP xlpp(120);
 
 // Filtering declarations...
 //const int threshold = 150; // Thresholding value
-const int threshold = 80; // Thresholding value
+const int threshold = 200; // Thresholding value
 
 const int stabilityThreshold = 5; // Number of consecutive measurements within threshold
 bool calibrating = true;
@@ -76,39 +80,46 @@ int stabilityCount = 0;
 float lastStableValue = 0;
 
 float getWaterLevel() {
+  // Power up the sonar sensor
   digitalWrite(powerSonarPin, HIGH);
-  unsigned int sum = 0;
-  // Floats to calculate distance
-  float duration, distance;
+  delay(100); // Stabilize the sensor (100ms is ideal for JSN-SRT04)
 
-  for (int i = 0; i != TotalReads; i++)
-  {
-    // Set the trigger pin LOW for 2uS
+  float sum = 0.0;
+  float duration, distance;
+  int validReadings = 0;
+
+  for (int i = 0; i < TotalReads; i++) {
+    // Ensure the trigger pin is LOW before sending a pulse
     digitalWrite(TRIGPIN, LOW);
     delayMicroseconds(2);
 
-    // Set the trigger pin HIGH for 20us to send pulse
+    // Send a 10-microsecond pulse on the trigger pin
     digitalWrite(TRIGPIN, HIGH);
-    delayMicroseconds(20);
-
-    // Return the trigger pin to LOW
+    delayMicroseconds(10);
     digitalWrite(TRIGPIN, LOW);
 
-    // Measure the width of the incoming pulse
-    duration = pulseIn(ECHOPIN, HIGH);
+    // Measure the width of the incoming pulse (timeout set to 35ms for ~6m range)
+    duration = pulseIn(ECHOPIN, HIGH, 35000);
 
-    // Determine distance from duration
-    // Use 343 metres per second as speed of sound
-    // Divide by 1000 as we want millimeters
+    // Calculate the distance (speed of sound = 343 m/s)
+    distance = (duration / 2.0) * 0.343; // Distance in millimeters
 
-    distance = (duration / 2) * 0.343;
-    sum += distance;
-    delay(100);
+    // Filter out invalid readings (below min or above max range)
+    if (distance > 250 && distance < 6000) { // JSN-SRT04 range: 250mm to 6000mm
+      sum += distance;
+      validReadings++;
+    }
+
+    delay(60); // Short delay between readings
   }
-  digitalWrite(powerSonarPin, LOW);
-  return sum / TotalReads;
 
+  // Power down the sonar sensor
+  digitalWrite(powerSonarPin, LOW);
+
+  // Return the average distance or -1 if no valid readings
+  return (validReadings > 0) ? (sum / validReadings) : 0;
 }
+
 
 void sendDataToGateway() {
   serialPrintf("LoRaWAN sending ... ");
@@ -259,21 +270,25 @@ void loop() {
   }
 
   // Measured value within threshold and not calibrating
-  if (abs(level - lastStableValue) <= threshold && !calibrating) {
+
+  // initialize a timer that checks when xlpp.addTemperature is executed
+  // if the the addtemperature was executed more than 2 minutes ago, execute xlpp.addTemperature(0,level)
+  // When the addtemperature gets executed reset the timer
+  // Its a forceful(bruteforce) way to send the current level
+ 
+   
+  if ((abs(level - lastStableValue) <= threshold || (currentMillis - lastSendTime >= 120000)) && !calibrating) {
 
     lastStableValue = level;
+    
     if (level > 0) {
       xlpp.addTemperature(0, level);
+      lastSendTime = currentMillis; // Reset the timer
     }
   } else {
     if (!calibrating) {
       stabilityCount = 0;
       calibrating = true;
-
-//      level = lastStableValue;
-//      if (level > 0) {
-//        xlpp.addTemperature(0,   level);
-//      }
     }
   }
 
@@ -286,22 +301,14 @@ void loop() {
   xlpp.addTemperature(1, percentage);
 
 //  Send data to gateway at given time intervals (sendInterval)
- unsigned long currentMillis = millis();
-// if ((cu/rrentMillis - previousSendTime >= sendInterval) && !calibrating) {
+    
     if (!calibrating){
       sendDataToGateway();
     }
-//    previ/ousSendTime = currentMillis;
-//  }
-
-//  receiveLoRaData();
 
   // Delay before repeating measurement
   Serial.println("------------------------------------------------------------");
       
-  // Put the microcontroller to sleep to save battery
-  delay(3000);
-  
   float  delayTime = (percentage > 50.00) ? 7 : 7;
   if (!calibrating){
     for (int i = 0; i < delayTime; i++) {
