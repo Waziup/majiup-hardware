@@ -20,7 +20,7 @@
 #define TRIGPIN A2
 #define ECHOPIN A1
 
-#define TotalReads A1
+#define TotalReads 3
 #define powerSonarPin 6
 
 
